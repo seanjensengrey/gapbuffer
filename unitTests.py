@@ -74,6 +74,8 @@ class TestString(unittest.TestCase):
 		self.x[:] = self.testVal
 		del self.x[1:2]
 		self.assertEquals(str(self.x), "ac")
+		del self.x[1]
+		self.assertEquals(str(self.x), "a")
 
 	def testReplace(self):
 		self.x[:] = "abcde"
@@ -209,6 +211,8 @@ class TestUnicode(unittest.TestCase):
 		self.x[:] = self.testVal
 		del self.x[1:2]
 		self.assertEquals(str(self.x), u"ac")
+		del self.x[1]
+		self.assertEquals(str(self.x), u"a")
 
 	def testReplace(self):
 		self.x[:] = u"abcde"
@@ -340,6 +344,8 @@ class TestInteger(unittest.TestCase):
 		self.x[:] = self.testVal
 		del self.x[1:2]
 		self.assertEquals(list(self.x), [1, 3])
+		del self.x[1]
+		self.assertEquals(list(self.x), [1])
 
 	def testReplace(self):
 		self.x[:] = [1, 2, 3, 4, 5]
