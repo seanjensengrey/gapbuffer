@@ -145,13 +145,13 @@ GapBuffer_init(GapBuffer *self, PyObject *args, PyObject *kwds) {
 		self->itemType = 'u';
 		self->itemSize = sizeof(Py_UNICODE);
 		_GapBuffer_insertarray(self, 0, (char *)PyUnicode_AS_UNICODE(value),
-			PyUnicode_GET_SIZE(value) * self->itemSize);
+		        PyUnicode_GET_SIZE(value) * self->itemSize);
 	} else if (!value || PyString_Check(value)) {
 		self->itemType = 'c';
 		self->itemSize = 1;
 		if (value) {
 			_GapBuffer_insertarray(self, 0, PyString_AsString(value),
-				PyString_Size(value));
+			        PyString_Size(value));
 		}
 	} else {
 		// Assume iterable
@@ -165,15 +165,15 @@ GapBuffer_init(GapBuffer *self, PyObject *args, PyObject *kwds) {
 
 // TODO stop exposing these - they are only for debugging
 static PyMemberDef GapBuffer_members[] = {
-	{"size", T_INT, offsetof(GapBuffer, size), READONLY, "Allocated size"},
-	{"part1Length", T_INT, offsetof(GapBuffer, part1Length), READONLY, "Length before gap"},
-	{"gapLength", T_INT, offsetof(GapBuffer, gapLength), READONLY, "Length of gap"},
-	{"growSize", T_INT, offsetof(GapBuffer, growSize), READONLY, "Size to grow"},
-	{"itemsize", T_INT, offsetof(GapBuffer, itemSize), READONLY, "Size of each item"},
-	{"typecode", T_CHAR, offsetof(GapBuffer, itemType), READONLY, "Type code of each item"},
-	{"bufferAppearence", T_INT, offsetof(GapBuffer, bufferAppearence), 0, "Single or multiple segments"},
-	{NULL}  /* Sentinel */
-};
+            {"size", T_INT, offsetof(GapBuffer, size), READONLY, "Allocated size"},
+            {"part1Length", T_INT, offsetof(GapBuffer, part1Length), READONLY, "Length before gap"},
+            {"gapLength", T_INT, offsetof(GapBuffer, gapLength), READONLY, "Length of gap"},
+            {"growSize", T_INT, offsetof(GapBuffer, growSize), READONLY, "Size to grow"},
+            {"itemsize", T_INT, offsetof(GapBuffer, itemSize), READONLY, "Size of each item"},
+            {"typecode", T_CHAR, offsetof(GapBuffer, itemType), READONLY, "Type code of each item"},
+            {"bufferAppearence", T_INT, offsetof(GapBuffer, bufferAppearence), 0, "Single or multiple segments"},
+            {NULL}  /* Sentinel */
+        };
 
 static PyObject *
 GapBuffer_insert(GapBuffer* self, PyObject *args) {
@@ -296,22 +296,22 @@ GapBuffer_increment(GapBuffer* self, PyObject *args) {
 		positionInPart2 = self->body + self->part1Length + self->gapLength;
 	else
 		positionInPart2 = self->body + self->gapLength + position;
-	lengthInPart2 = (length-lengthInPart1) / self->itemSize;
+	lengthInPart2 = (length - lengthInPart1) / self->itemSize;
 	lengthInPart1 /= self->itemSize;
 
 	switch (self->itemSize) {
-		case 1:
-			memincr1(self->body + position, lengthInPart1, value);
-			memincr1(positionInPart2, lengthInPart2, value);
-			break;
-		case 2:
-			memincr2((short *)(self->body + position), lengthInPart1, value);
-			memincr2((short *)(positionInPart2), lengthInPart2, value);
-			break;
-		case 4:
-			memincr4((int *)(self->body + position), lengthInPart1, value);
-			memincr4((int *)(positionInPart2), lengthInPart2, value);
-			break;
+	case 1:
+		memincr1(self->body + position, lengthInPart1, value);
+		memincr1(positionInPart2, lengthInPart2, value);
+		break;
+	case 2:
+		memincr2((short *)(self->body + position), lengthInPart1, value);
+		memincr2((short *)(positionInPart2), lengthInPart2, value);
+		break;
+	case 4:
+		memincr4((int *)(self->body + position), lengthInPart1, value);
+		memincr4((int *)(positionInPart2), lengthInPart2, value);
+		break;
 	}
 
 	Py_INCREF(Py_None);
@@ -382,7 +382,7 @@ GapBuffer_compare(GapBuffer* self, PyObject *other) {
 	if (self->itemType != o->itemType) {
 		return (self->itemType > o->itemType) ? 1 : -1;
 	}
-	for (i = 0; i<self->lengthBody; i++) {
+	for (i = 0; i < self->lengthBody; i++) {
 		if (i >= o->lengthBody)
 			return 1;
 		if (*_GapBuffer_at(self, i) != *_GapBuffer_at(o, i)) {
@@ -405,10 +405,10 @@ GapBuffer_str(GapBuffer* self) {
 		char buf[1024];
 		char elem[256];
 		int i;
-		int elements = self->lengthBody/self->itemSize;
+		int elements = self->lengthBody / self->itemSize;
 		int maxElements = 10;
 		PyOS_snprintf(buf, sizeof(buf), "GapBuffer('%c') [", self->itemType);
-		for (i=0; i<maxElements && i<elements; i++) {
+		for (i = 0; i < maxElements && i < elements; i++) {
 			PyOS_snprintf(elem, sizeof(elem), "%d, ", *(int *)_GapBuffer_at(self, i * self->itemSize));
 			strcat(buf, elem);
 		}
@@ -428,20 +428,20 @@ GapBuffer_slim(GapBuffer *self) {
 	// Reduce growSize
 	while ((self->growSize > 8) && (self->growSize * 3 > self->lengthBody))
 		self->growSize /= 2;
-	_GapBuffer_ReAllocate(self, self->lengthBody /8 * 8 + self->growSize);
+	_GapBuffer_ReAllocate(self, self->lengthBody / 8 * 8 + self->growSize);
 
 	Py_INCREF(Py_None);
 	return Py_None;
 }
 
 static PyMethodDef GapBuffer_methods[] = {
-	{"retrieve", (PyCFunction)GapBuffer_retrieve, METH_VARARGS, "Retrieve a portion as a string"	},
-	{"insert", (PyCFunction)GapBuffer_insert, METH_VARARGS, "Insert a string" },
-	{"extend", (PyCFunction)GapBuffer_extend, METH_VARARGS,"Extend with a string" },
-	{"increment", (PyCFunction)GapBuffer_increment, METH_VARARGS,"Increment a range of values" },
-	{"slim", (PyCFunction)GapBuffer_slim, METH_VARARGS,"Minimize memory used" },
-	{NULL}  /* Sentinel */
-};
+            {"retrieve", (PyCFunction)GapBuffer_retrieve, METH_VARARGS, "Retrieve a portion as a string"	},
+            {"insert", (PyCFunction)GapBuffer_insert, METH_VARARGS, "Insert a string" },
+            {"extend", (PyCFunction)GapBuffer_extend, METH_VARARGS, "Extend with a string" },
+            {"increment", (PyCFunction)GapBuffer_increment, METH_VARARGS, "Increment a range of values" },
+            {"slim", (PyCFunction)GapBuffer_slim, METH_VARARGS, "Minimize memory used" },
+            {NULL}  /* Sentinel */
+        };
 
 // The getreadbufferproc, getwritebufferproc, and getcharbufferproc are mostly the same
 int _GapBuffer_getbufferproc(GapBuffer *self, Py_ssize_t index, const void **ptr) {
@@ -492,11 +492,11 @@ int GapBuffer_getcharbufferproc(GapBuffer *self, Py_ssize_t index, const void **
 }
 
 static PyBufferProcs GapBuffer_bufferprocs = {
-	(readbufferproc)GapBuffer_getreadbufferproc,
-	(writebufferproc)GapBuffer_getwritebufferproc,
-	(segcountproc)GapBuffer_getsegcountproc,
-	(charbufferproc)GapBuffer_getcharbufferproc,
-};
+            (readbufferproc)GapBuffer_getreadbufferproc,
+            (writebufferproc)GapBuffer_getwritebufferproc,
+            (segcountproc)GapBuffer_getsegcountproc,
+            (charbufferproc)GapBuffer_getcharbufferproc,
+        };
 
 static Py_ssize_t
 GapBuffer_length(GapBuffer *self) {
@@ -613,7 +613,7 @@ GapBuffer_repeat(GapBuffer *self, Py_ssize_t n) {
 	_GapBuffer_RoomFor(nsv, lengthTotal);
 	_GapBuffer_GapTo(nsv, 0);
 	_GapBuffer_GapTo(self, self->lengthBody);
-	for (i=0;i<n;i++) {
+	for (i = 0;i < n;i++) {
 		memmove(nsv->body + self->lengthBody * i, self->body, self->lengthBody);
 	}
 	nsv->lengthBody += lengthTotal;
@@ -622,12 +622,19 @@ GapBuffer_repeat(GapBuffer *self, Py_ssize_t n) {
 	return (PyObject *)nsv;
 }
 
+static void
+_GapBuffer_delete(GapBuffer *self, int position, int size) {
+	_GapBuffer_GapTo(self, position);
+	self->lengthBody -= size;
+	self->gapLength += size;
+}
+
 static int
 GapBuffer_ass_slice(GapBuffer *self, Py_ssize_t ilow, Py_ssize_t ihigh, PyObject *v) {
-	int deleteLength;
-	char* text = NULL;
+	char *text = NULL;
 	int insertLength = 0;
 	GapBuffer *psv = NULL;
+//printf("ass_slice %d %d\n", ilow, ihigh); fflush(stdout);
 
 	ilow *= self->itemSize;
 	if (ihigh == -1 || ihigh > (self->lengthBody / self->itemSize)) {
@@ -646,10 +653,7 @@ GapBuffer_ass_slice(GapBuffer *self, Py_ssize_t ilow, Py_ssize_t ihigh, PyObject
 		ihigh = ilow;
 	else if (ihigh > self->lengthBody)
 		ihigh = self->lengthBody;
-	_GapBuffer_GapTo(self, ilow);
-	deleteLength = ihigh - ilow;
-	self->lengthBody -= deleteLength;
-	self->gapLength += deleteLength;
+	_GapBuffer_delete(self, ilow, ihigh - ilow);
 
 	if (v) {
 		psv = (GapBuffer *)v;
@@ -696,12 +700,13 @@ GapBuffer_ass_item(GapBuffer *self, Py_ssize_t position, PyObject *v) {
 			PyErr_SetString(PyExc_IndexError, "GapBuffer index out of range");
 			return -1;
 		}
-		if (position < self->part1Length) {
-			ptr = self->body + position;
+		if (v) {
+			ptr = _GapBuffer_at(self, position);
+			*((int *)ptr) = PyInt_AsLong(v);
 		} else {
-			ptr = self->body + self->gapLength + position;
+			// Deleting an item
+			_GapBuffer_delete(self, position, self->itemSize);
 		}
-		*((int *)ptr) = PyInt_AsLong(v);
 		return 0;
 	} else {
 		return GapBuffer_ass_slice(self, position, position + 1, v);
@@ -784,4 +789,5 @@ initgapbuffer(void) {
 	Py_INCREF(&gapbuffer_GapBufferType);
 	PyModule_AddObject(m, "GapBuffer", (PyObject *)&gapbuffer_GapBufferType);
 }
+
 
