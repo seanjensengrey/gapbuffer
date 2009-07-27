@@ -368,6 +368,13 @@ class TestInteger(unittest.TestCase):
 		a[:] = [2, 3]
 		self.assertEquals(sl, a)
 
+	def testSliceAll(self):
+		self.x[:] = [1, 2, 3, 4]
+		sl = self.x[:]
+		a = GapBuffer([])
+		a[:] = [1, 2, 3, 4]
+		self.assertEquals(sl, a)
+
 	def testConcat(self):
 		self.x[:] = self.testVal
 		co = self.x + self.x

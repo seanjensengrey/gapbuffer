@@ -558,8 +558,10 @@ GapBuffer_slice(GapBuffer *self, Py_ssize_t ilow, Py_ssize_t ihigh) {
 	int length;
 	int i = 0;
 	int position = 0;
-
+	
 	ilow *= self->itemSize;
+	if (ihigh > self->lengthBody / self->itemSize)
+		ihigh = self->lengthBody / self->itemSize;
 	ihigh *= self->itemSize;
 
 	if (ilow < 0)
