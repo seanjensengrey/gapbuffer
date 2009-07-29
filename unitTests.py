@@ -251,6 +251,13 @@ class TestUnicode(unittest.TestCase):
 		y = r.search(self.x)
 		self.assertEquals(str(y.group(0)), u"bc")
 
+	def testRussianRE(self):
+		self.x[:] = u"Палить из пушки по воробьям"
+		rusWord = u"пушки"
+		r = re.compile("\w+", re.M|re.U)
+		y = r.findall(self.x)
+		self.assertEquals(unicode(y[2]), rusWord)
+
 	def testSlim(self):
 		self.x[:] = self.testVal
 		self.x.slim()
