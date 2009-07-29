@@ -58,7 +58,7 @@ static PyTypeObject gapbuffer_GapBufferType;
 static void
 GapBuffer_dealloc(GapBuffer* self) {
 	PyMem_Del(self->body);
-	self->ob_type->tp_free((PyObject*)self);
+	Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
 static void
@@ -146,7 +146,7 @@ _GapBuffer_insertiter(GapBuffer* self, int position, PyObject *sequence) {
 		return 1;
 	}
 	while ((value = PyIter_Next(iter)) != NULL) {
-		int ival = PyInt_AsLong(value);
+		int ival = PyLong_AsLong(value);
 		if ((ival == -1) && PyErr_Occurred()) {
 			PyErr_SetString(PyExc_TypeError, "GapBuffer: argument wrong type");
 			return 1;
@@ -174,12 +174,12 @@ GapBuffer_init(GapBuffer *self, PyObject *args, PyObject *kwds) {
 		self->itemSize = sizeof(Py_UNICODE);
 		_GapBuffer_insertarray(self, 0, (char *)PyUnicode_AS_UNICODE(value),
 		        PyUnicode_GET_SIZE(value) * self->itemSize);
-	} else if (!value || PyString_Check(value)) {
+	} else if (!value || PyBytes_Check(value)) {
 		self->itemType = 'c';
 		self->itemSize = 1;
 		if (value) {
-			_GapBuffer_insertarray(self, 0, PyString_AsString(value),
-			        PyString_Size(value));
+			_GapBuffer_insertarray(self, 0, PyBytes_AS_STRING(value),
+			        PyBytes_GET_SIZE(value));
 		}
 	} else {
 		// Assume iterable
@@ -361,10 +361,10 @@ _GapBuffer_retrieve(GapBuffer* self, int positionToRetrieve, int retrieveLength)
 	}
 
 	if (self->itemType == 'c') {
-		retrievedString = PyString_FromStringAndSize(NULL, retrieveLength);
+		retrievedString = PyBytes_FromStringAndSize(NULL, retrieveLength);
 		if (retrievedString == 0)
 			return 0;
-		retStrPtr = (char *)PyString_AsString(retrievedString);
+		retStrPtr = (char *)PyBytes_AsString(retrievedString);
 	} else if (self->itemType == 'u') {
 		retrievedString = PyUnicode_FromUnicode(NULL, retrieveLength / self->itemSize);
 		if (retrievedString == 0)
@@ -421,6 +421,31 @@ GapBuffer_compare(GapBuffer* self, PyObject *other) {
 	if (self->lengthBody < o->lengthBody)
 		return -1;
 	return 0;
+}
+
+static PyObject *
+GapBuffer_richcmp(PyObject *obj1, PyObject *obj2, int op) {
+	int result = 0;
+	PyObject *ret;
+
+	if (!PyObject_TypeCheck(obj2, &gapbuffer_GapBufferType)) {
+		PyErr_SetString(PyExc_TypeError, "GapBuffer compare: wrong type");
+		if (op == Py_NE)
+			result = 1;
+	} else {
+		int relation = GapBuffer_compare((GapBuffer *)obj1, obj2);
+		switch (op) {
+		case Py_LT: result = relation <  0; break;
+		case Py_LE: result = relation <= 0; break;
+		case Py_EQ: result = relation == 0; break;
+		case Py_NE: result = relation != 0; break;
+		case Py_GT: result = relation >  0; break;
+		case Py_GE: result = relation >= 0; break;
+		}
+	}
+	ret = result ? Py_True : Py_False;
+	Py_INCREF(ret);
+	return ret;
 }
 
 static PyObject *
@@ -544,11 +569,11 @@ GapBuffer_item(GapBuffer *self, Py_ssize_t position) {
 
 	ptr = _GapBuffer_at(self, position);
 	if (self->itemType == 'c') {
-		return PyString_FromStringAndSize(ptr, 1);
+		return PyBytes_FromStringAndSize(ptr, 1);
 	} else if (self->itemType == 'u') {
 		return PyUnicode_FromUnicode((Py_UNICODE *)(ptr), 1);
 	} else {
-		return PyInt_FromLong((long)*((int *)ptr));
+		return PyLong_FromLong((long)*((int *)ptr));
 	}
 }
 
@@ -693,9 +718,9 @@ GapBuffer_ass_slice(GapBuffer *self, Py_ssize_t ilow, Py_ssize_t ihigh, PyObject
 			text = psv->body;
 			insertLength = psv->lengthBody / self->itemSize;
 		} else if (self->itemType == 'c') {
-			if (PyString_Check(v)) {
-				text = PyString_AsString(v);
-				insertLength = PyString_Size(v);
+			if (PyBytes_Check(v)) {
+				text = PyBytes_AsString(v);
+				insertLength = PyBytes_Size(v);
 			} else {
 				PyErr_SetString(PyExc_TypeError, "GapBuffer assign slice: wrong type");
 				return -1;
@@ -732,7 +757,7 @@ GapBuffer_ass_item(GapBuffer *self, Py_ssize_t position, PyObject *v) {
 		}
 		if (v) {
 			ptr = _GapBuffer_at(self, position);
-			*((int *)ptr) = PyInt_AsLong(v);
+			*((int *)ptr) = PyLong_AsLong(v);
 		} else {
 			// Deleting an item
 			_GapBuffer_delete(self, position, self->itemSize);
@@ -753,6 +778,49 @@ static PySequenceMethods GapBuffer_as_sequence = {
             (ssizessizeobjargproc)GapBuffer_ass_slice,      /*sq_ass_slice*/
         };
 
+static PyObject *GapBuffer_subscript(GapBuffer *self, PyObject *item) {
+	if (PySlice_Check(item)) {
+		Py_ssize_t start, stop, step, slicelength;
+		if (PySlice_GetIndicesEx((PySliceObject*)item, 
+			self->lengthBody, &start, &stop, 
+			&step, &slicelength) < 0)
+			return NULL;
+
+		if (step != 1) {
+			PyErr_SetString(PyExc_TypeError, "slice steps not supported");
+			return NULL;
+		}
+		return GapBuffer_slice(self, start, stop);
+	} else {
+		int index = PyLong_AsLong(item);
+		return GapBuffer_item(self, index);
+	}
+}
+
+static int GapBuffer_ass_subscript(GapBuffer *self, PyObject *item, PyObject *value) {
+	if (PySlice_Check(item)) {
+		Py_ssize_t start, stop, step, slicelength;
+		if (PySlice_GetIndicesEx((PySliceObject*)item, 
+			self->lengthBody, &start, &stop, 
+			&step, &slicelength) < 0)
+			return 0;
+		if (step != 1) {
+			PyErr_SetString(PyExc_TypeError, "slice steps not supported");
+			return 0;
+		}
+		GapBuffer_ass_slice(self, start, stop, value);
+	} else {
+		int index = PyLong_AsLong(item);
+		GapBuffer_ass_item(self, index, value);
+	}
+	return 0;
+}
+
+static PyMappingMethods GapBuffer_as_mapping = {
+            (lenfunc)GapBuffer_length,
+            (binaryfunc)GapBuffer_subscript,
+            (objobjargproc)GapBuffer_ass_subscript,
+        };
 
 static PyTypeObject gapbuffer_GapBufferType = {
             PyObject_HEAD_INIT(NULL)
@@ -768,7 +836,7 @@ static PyTypeObject gapbuffer_GapBufferType = {
             (reprfunc)GapBuffer_str,                         /*tp_repr*/
             0,                         /*tp_as_number*/
             &GapBuffer_as_sequence,                         /*tp_as_sequence*/
-            0,                         /*tp_as_mapping*/
+            &GapBuffer_as_mapping,     /*tp_as_mapping*/
             0,                         /*tp_hash */
             0,                         /*tp_call*/
             0,                         /*tp_str*/
@@ -779,7 +847,7 @@ static PyTypeObject gapbuffer_GapBufferType = {
             "GapBuffer objects",           /* tp_doc */
             0,		               /* tp_traverse */
             0,		               /* tp_clear */
-            0,		               /* tp_richcompare */
+            GapBuffer_richcmp,         /* tp_richcompare */
             0,		               /* tp_weaklistoffset */
             0,		               /* tp_iter */
             0,		               /* tp_iternext */
