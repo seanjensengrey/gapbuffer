@@ -17,7 +17,7 @@ setup (name = 'gapbuffer',
        url = "http://code.google.com/p/gapbuffer/",
        download_url = "http://gapbuffer.googlecode.com/files/gapbuffer-1.03.zip",
        ext_modules = [module1],
-       platforms = ["Platform Independent"]
+       platforms = ["Platform Independent"],
        classifiers=[
           'Development Status :: 5 - Production/Stable',
           'Intended Audience :: Developers',
