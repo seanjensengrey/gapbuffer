@@ -6,11 +6,12 @@ module1 = Extension('gapbuffer',
 setup (name = 'gapbuffer',
        version = '1.03',
        description = 'A gap buffer package',
-       long_description = """Gap buffers are efficient mutable sequences that 
-       are often used to store text in text editors. 
-       They utilize locality of modification to avoid copying large amounts 
-       of data and allocate extra elements to avoid memory allocation 
-       dominating performance.""",
+       long_description = 
+"""Gap buffers are efficient mutable sequences that 
+are often used to store text in text editors. 
+They utilize locality of modification to avoid copying large 
+amounts of data and allocate extra elements to avoid 
+memory allocation dominating performance.""",
        author = "Neil Hodgson",
        author_email = "neilh@scintilla.org",
        license = "MIT",
