@@ -41,6 +41,7 @@ typedef struct {
 	int itemSize;
 	int bufferAppearence;
 	char itemType;
+	int lock;
 }
 GapBuffer;
 
@@ -73,6 +74,7 @@ _GapBuffer_InitFields(GapBuffer *self) {
 		self->itemSize = 1;
 		self->itemType = 'c';
 		self->bufferAppearence = 0;
+		self->lock = 0;
 	}
 }
 
@@ -209,6 +211,11 @@ GapBuffer_insert(GapBuffer* self, PyObject *args) {
 	int positionToInsert;
 	Py_ssize_t insertLength;
 	PyObject *sequence = NULL;
+
+	if (self->lock) {
+		PyErr_SetString(PyExc_BufferError, "Object is locked.");
+		return NULL;
+	}
 
 	if (self->itemType == 'c') {
 		if (!PyArg_ParseTuple(args, "is#:insert", &positionToInsert, &data, &insertLength)) {
@@ -451,7 +458,14 @@ GapBuffer_richcmp(PyObject *obj1, PyObject *obj2, int op) {
 static PyObject *
 GapBuffer_str(GapBuffer* self) {
 	if (self->itemType == 'c') {
+#if PY_MAJOR_VERSION >= 3
+		PyObject *pbytes = _GapBuffer_retrieve(self, 0, self->lengthBody);
+		PyObject *repr = PyBytes_Repr(pbytes, 0);
+		Py_DECREF(pbytes);
+		return repr;
+#else
 		return _GapBuffer_retrieve(self, 0, self->lengthBody);
+#endif
 	} else if (self->itemType == 'u') {
 		return _GapBuffer_retrieve(self, 0, self->lengthBody / self->itemSize);
 	} else {
@@ -471,18 +485,26 @@ GapBuffer_str(GapBuffer* self) {
 			buf[strlen(buf)-2] = '\0';
 			strcat(buf, "]");
 		}
+#if PY_MAJOR_VERSION >= 3
+		return PyUnicode_FromString(buf);
+#else
 		return PyString_FromString(buf);
+#endif
 	}
 }
 
 // Minimize memory used
 static PyObject *
 GapBuffer_slim(GapBuffer *self) {
+	if (self->lock) {
+		PyErr_SetString(PyExc_BufferError, "Object is locked.");
+		Py_INCREF(Py_None);
+		return Py_None;
+	}
 	// Reduce growSize
 	while ((self->growSize > 8) && (self->growSize * 3 > self->lengthBody))
 		self->growSize /= 2;
 	_GapBuffer_ReAllocate(self, self->lengthBody / 8 * 8 + self->growSize);
-
 	Py_INCREF(Py_None);
 	return Py_None;
 }
@@ -495,6 +517,50 @@ static PyMethodDef GapBuffer_methods[] = {
             {"slim", (PyCFunction)GapBuffer_slim, METH_VARARGS, "Minimize memory used" },
             {NULL}  /* Sentinel */
         };
+
+#if PY_MAJOR_VERSION >= 3
+
+static int GapBuffer_getbufferproc(GapBuffer *self, Py_buffer *view, int flags) {
+	// Move gap to end so bytes are contiguous
+	_GapBuffer_GapTo(self, self->lengthBody);
+
+	Py_INCREF(self);
+	view->obj = (PyObject*)self;
+	view->buf = self->body;
+	view->len = self->lengthBody;
+	view->readonly = 0;
+	if (flags & PyBUF_FORMAT) {
+		if (self->itemType == 'c') {
+			view->format = "c";
+		} else if (self->itemType == 'u') {
+			view->format = "s";
+		} else {    // self->itemType == 'i'
+			view->format = "i";
+		}
+	} else {
+		view->format = "B";
+	}
+	view->ndim = 1;
+	view->strides = NULL;
+	view->suboffsets = NULL;
+	view->itemsize = self->itemSize;
+	view->internal = 0;
+	self->lock++;
+	return 0;
+}
+
+static void GapBuffer_releasebufferproc(GapBuffer *self, Py_buffer *view) {
+	self->lock--;
+}
+
+static PyBufferProcs GapBuffer_bufferprocs = {
+            (getbufferproc)GapBuffer_getbufferproc,
+            (releasebufferproc)GapBuffer_releasebufferproc,
+        };
+
+#else
+
+// Python 2.x buffer procs
 
 // The getreadbufferproc, getwritebufferproc, and getcharbufferproc are mostly the same
 int _GapBuffer_getbufferproc(GapBuffer *self, Py_ssize_t index, const void **ptr) {
@@ -550,6 +616,8 @@ static PyBufferProcs GapBuffer_bufferprocs = {
             (segcountproc)GapBuffer_getsegcountproc,
             (charbufferproc)GapBuffer_getcharbufferproc,
         };
+
+#endif
 
 static Py_ssize_t
 GapBuffer_length(GapBuffer *self) {
@@ -689,8 +757,11 @@ GapBuffer_ass_slice(GapBuffer *self, Py_ssize_t ilow, Py_ssize_t ihigh, PyObject
 	char *text = NULL;
 	int insertLength = 0;
 	GapBuffer *psv = NULL;
-//printf("ass_slice %d %d\n", ilow, ihigh); fflush(stdout);
 
+	if (self->lock) {
+		PyErr_SetString(PyExc_BufferError, "Object is locked.");
+		return -1;
+	}
 	ilow *= self->itemSize;
 	if (ihigh == -1 || ihigh > (self->lengthBody / self->itemSize)) {
 		ihigh = self->lengthBody;
@@ -748,6 +819,10 @@ GapBuffer_ass_slice(GapBuffer *self, Py_ssize_t ilow, Py_ssize_t ihigh, PyObject
 
 static int
 GapBuffer_ass_item(GapBuffer *self, Py_ssize_t position, PyObject *v) {
+	if (self->lock) {
+		PyErr_SetString(PyExc_BufferError, "Object is locked.");
+		return -1;
+	}
 	if (self->itemType == 'i') {
 		char *ptr;
 		position *= self->itemSize;
@@ -798,6 +873,10 @@ static PyObject *GapBuffer_subscript(GapBuffer *self, PyObject *item) {
 }
 
 static int GapBuffer_ass_subscript(GapBuffer *self, PyObject *item, PyObject *value) {
+	if (self->lock) {
+		PyErr_SetString(PyExc_BufferError, "Object is locked.");
+		return -1;
+	}
 	if (PySlice_Check(item)) {
 		Py_ssize_t start, stop, step, slicelength;
 		if (PySlice_GetIndicesEx((PySliceObject*)item, 
@@ -824,7 +903,9 @@ static PyMappingMethods GapBuffer_as_mapping = {
 
 static PyTypeObject gapbuffer_GapBufferType = {
             PyObject_HEAD_INIT(NULL)
+#if PY_MAJOR_VERSION < 3
             0,                         /*ob_size*/
+#endif
             "gapbuffer.GapBuffer",             /*tp_name*/
             sizeof(GapBuffer), /*tp_basicsize*/
             0,                         /*tp_itemsize*/
@@ -832,7 +913,11 @@ static PyTypeObject gapbuffer_GapBufferType = {
             0,                         /*tp_print*/
             0,                         /*tp_getattr*/
             0,                         /*tp_setattr*/
+#if PY_MAJOR_VERSION >= 3
+            0,                         /* was tp_compare*/
+#else
             (cmpfunc)GapBuffer_compare,                         /*tp_compare*/
+#endif
             (reprfunc)GapBuffer_str,                         /*tp_repr*/
             0,                         /*tp_as_number*/
             &GapBuffer_as_sequence,                         /*tp_as_sequence*/
@@ -843,7 +928,11 @@ static PyTypeObject gapbuffer_GapBufferType = {
             0,                         /*tp_getattro*/
             0,                         /*tp_setattro*/
             &GapBuffer_bufferprocs,                         /*tp_as_buffer*/
+#if PY_MAJOR_VERSION >= 3
+            Py_TPFLAGS_DEFAULT,        /*tp_flags*/
+#else
             Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE | Py_TPFLAGS_HAVE_GETCHARBUFFER,        /*tp_flags*/
+#endif
             "GapBuffer objects",           /* tp_doc */
             0,		               /* tp_traverse */
             0,		               /* tp_clear */
@@ -871,21 +960,48 @@ static PyMethodDef gapbuffer_methods[] = {
 #ifndef PyMODINIT_FUNC	/* declarations for DLL import/export */
 #define PyMODINIT_FUNC void
 #endif
+
+#if PY_MAJOR_VERSION >= 3
+
+static PyModuleDef gapbuffermodule = {
+	PyModuleDef_HEAD_INIT,
+	"gapbuffer",
+	"Gap buffer extension type.",
+	-1,
+	NULL, NULL, NULL, NULL, NULL
+};
+
+#endif
+
 PyMODINIT_FUNC
-initgapbuffer(void) {
-	PyObject* m;
+#if PY_MAJOR_VERSION >= 3
+PyInit_gapbuffer(void)
+#else
+initgapbuffer(void) 
+#endif 
+{
+	PyObject *module = NULL;
 
 	gapbuffer_GapBufferType.tp_new = PyType_GenericNew;
-	if (PyType_Ready(&gapbuffer_GapBufferType) < 0)
-		return;
+	if (PyType_Ready(&gapbuffer_GapBufferType) >= 0) {
 
 //__debugbreak();
 
-	m = Py_InitModule3("gapbuffer", gapbuffer_methods,
-	        "Gap buffer extension type.");
+#if PY_MAJOR_VERSION >= 3
+		module = PyModule_Create(&gapbuffermodule);
+#else
+		module = Py_InitModule3("gapbuffer", gapbuffer_methods,
+			"Gap buffer extension type.");
+#endif
 
-	Py_INCREF(&gapbuffer_GapBufferType);
-	PyModule_AddObject(m, "GapBuffer", (PyObject *)&gapbuffer_GapBufferType);
+		if (module) {
+			Py_INCREF(&gapbuffer_GapBufferType);
+			PyModule_AddObject(module, "GapBuffer", (PyObject *)&gapbuffer_GapBufferType);
+		}
+	}
+#if PY_MAJOR_VERSION >= 3
+	return module;
+#endif
 }
 
 
